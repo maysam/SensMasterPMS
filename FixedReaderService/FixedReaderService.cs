@@ -18,10 +18,12 @@ namespace SensMaster
         SqlConnection SQLConnection;
         Dictionary<string, Reader> readers = new Dictionary<string, Reader>();
 
-
         public FixedReaderService()
         {
             InitializeComponent();
+            string connectionString = ConfigurationManager.ConnectionStrings["SensMaster.Properties.Settings.pmsConnectionString"].ConnectionString;
+            SQLConnection = new SqlConnection(connectionString);
+            SQLConnection.Open();
 
             if (!System.Diagnostics.EventLog.SourceExists("FixedReader"))
             {
@@ -64,6 +66,45 @@ namespace SensMaster
         }
         private bool process(Tag[] tags)
         {
+            if (tags.Length == 1)
+            {
+                // single tag
+                Tag tag = tags[0];
+                using (SqlCommand cmd = new SqlCommand("sp_sm_singleTag", SQLConnection))
+                {
+                    cmd.CommandType = CommandType.StoredProcedure;
+
+                    cmd.Parameters.Add("@strReaderID", SqlDbType.VarChar).Value = tag.reader.ID;
+                    cmd.Parameters.Add("@strReaderIP", SqlDbType.VarChar).Value = tag.reader.TCP_IP_Address;
+                    cmd.Parameters.Add("@strTagType", SqlDbType.VarChar).Value = Reader.SINGLETAG;
+                    cmd.Parameters.Add("@strTagData", SqlDbType.VarChar).Value = tag.data;
+                    cmd.Parameters.Add("@strTagID", SqlDbType.VarChar).Value = tag.ID;
+
+                    cmd.ExecuteNonQuery();
+                }
+
+            }
+            else if (tags.Length == 3)
+            {
+                if (tags.Any(tag => tag is Body) && tags.Any(tag => tag is Chassis) && tags.Any(tag => tag is Engine))
+                {
+                    Body body = (Body)tags.First(tag => tag is Body);
+                    Chassis chassis = (Chassis)tags.First(tag => tag is Chassis);
+                    Engine engine = (Engine)tags.First(tag => tag is Engine);
+                    using (SqlCommand cmd = new SqlCommand("sp_sm_singleTag", SQLConnection))
+                    {
+                        cmd.CommandType = CommandType.StoredProcedure;
+
+                        cmd.Parameters.Add("@strReaderID", SqlDbType.VarChar).Value = body.reader.ID;
+                        cmd.Parameters.Add("@strReaderIP", SqlDbType.VarChar).Value = body.reader.TCP_IP_Address;
+                        cmd.Parameters.Add("@strChassisNo", SqlDbType.VarChar).Value = chassis.ChassisNo;
+                        cmd.Parameters.Add("@strEngineNo", SqlDbType.VarChar).Value = engine.EngineNo;
+                        cmd.Parameters.Add("@strBodyNo", SqlDbType.VarChar).Value = body.PunchBody;
+
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+            }
             return true;
         }
 
@@ -83,8 +124,8 @@ namespace SensMaster
 
             foreach (DataRow row in infoTable.Rows)
             {
-                string ip = row["currentReaderIP"] as string;
-                Reader reader = new Reader(row["currentReaderIP"].ToString(), 22, "Damansara", Reader.SINGLETAG);
+                string ip = row["ReaderIP"] as string;
+                Reader reader = new Reader(row["readerID"].ToString(), ip, Int16.Parse( row["tcpPort"].ToString()), "Damansara", byte.Parse( row["readTypeCode"].ToString()));
                 if (readers.ContainsKey(ip))
                 {
                     readers[ip] = reader;

@@ -23,14 +23,16 @@ namespace SensMaster
         public static readonly byte DFU = 0x02;
 
         private RFIdent_Class RF_Reader;
-        private string TCP_IP_Address;
+        public string TCP_IP_Address;
         private int TCP_Port;
         private string Location_Name;
-        private byte Read_Type;
+        public byte Read_Type;
+        public string ID;
 
-        public Reader(string TCP_IP_Address, int TCP_Port, string Location_Name, byte Read_Type)
+        public Reader(string id, string TCP_IP_Address, int TCP_Port, string Location_Name, byte Read_Type)
         {
-            RF_Reader = new RFIdent_Class(Read_Type);
+            RF_Reader = new RFIdent_Class(this);
+            ID = id;
             this.TCP_IP_Address = TCP_IP_Address;
             this.TCP_Port = TCP_Port;
             this.Location_Name = Location_Name;
@@ -39,13 +41,7 @@ namespace SensMaster
 
         public void Poll(Func<Tag[], bool> Display)
         {
-            RF_Reader.Get_List_Of_Tag_Test(Display);
-        }
-
-        public Tag ReadWordBlock(byte[] TagID)
-        {
-            byte[] read_data = new byte[] { 0x01 };
-            return ParseUserMemory(read_data);
+            RF_Reader.Get_List_Of_Tag(Display);
         }
 
         public Tag ParseUserMemory(byte[] read_data)
@@ -89,11 +85,11 @@ namespace SensMaster
             switch ((char)read_data[8])
             {
                 case 'E':
-                    return new Engine(read_data, Number1, Number2);
+                    return new Engine(this, read_data, Number1, Number2);
                 case 'C':
-                    return new Chassis(read_data, Number1, Number2);
+                    return new Chassis(this, read_data, Number1, Number2);
                 case 'B':
-                    return new Body(read_data, Number1);
+                    return new Body(this, read_data, Number1);
                 default:
                     throw new Exception("Invalid Tag");
             }

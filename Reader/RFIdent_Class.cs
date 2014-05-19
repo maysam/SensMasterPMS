@@ -20,7 +20,6 @@ namespace SensMaster
     {
         class Reader_Params
         {
-            public byte Read_Type = 0x00; 
             public byte Current_Read_Memory_OP = 0x00;
             public OrderedDictionary Tag_EPC_Checklist =  new OrderedDictionary(10);
             public OrderedDictionary Tag_UMEM_Checklist = new OrderedDictionary(10);
@@ -36,11 +35,12 @@ namespace SensMaster
 
         #region Constructor & Destructor
 
+        Reader reader;
         Reader_Params Reader_Param = new Reader_Params();
 
-        public RFIdent_Class(byte Read_Type)
+        public RFIdent_Class(Reader reader)
         {
-            Reader_Param.Read_Type = Read_Type;
+            this.reader = reader;
             Reader_Param.Tag_EPC_Checklist.Clear();
             Reader_Param.Tag_UMEM_Checklist.Clear();
             tmrConnection_Init();
@@ -57,11 +57,11 @@ namespace SensMaster
 
         #region Custom Exception Class
 
-        class Connection_Exception : Exception
+        class ConnectionException : Exception
         {
             private string MSG;
 
-            public Connection_Exception(string MSG)
+            public ConnectionException(string MSG)
             {
                 // TODO: Complete member initialization
                 this.MSG = MSG;
@@ -75,41 +75,12 @@ namespace SensMaster
                 }
             }
         }
-
-        class Processing_Exception : Exception
-        {
-            private string MSG;
-            private byte ErrorCode;
-
-            public Processing_Exception(string MSG, byte ErrorCode)
-            {
-                // TODO: Complete member initialization
-                this.MSG = MSG;
-                this.ErrorCode = ErrorCode;
-            }
-
-            public override string Message
-            {
-                get
-                {
-                    return MSG;
-                }
-            }
-
-            public byte Error_Code
-            {
-                get
-                {
-                    return ErrorCode;
-                }
-            }
-        }
-
-        class Operation_Exception : Exception
+         
+        class OperationException : Exception
         {
             private string MSG;
 
-            public Operation_Exception(string MSG)
+            public OperationException(string MSG)
             {
                 // TODO: Complete member initialization
                 this.MSG = MSG;
@@ -393,12 +364,12 @@ namespace SensMaster
                     }
                     else
                     {
-                        throw new Connection_Exception("Connect Fail");
+                        throw new ConnectionException("Connect Fail");
                     }
                 }
                 else
                 {
-                    throw new Connection_Exception("Ping Fail");
+                    throw new ConnectionException("Ping Fail");
                 }
             }
             catch (System.Exception ex)
@@ -457,11 +428,11 @@ namespace SensMaster
                         return true;
                     }
 
-                    throw new Connection_Exception("Cannot Send");
+                    throw new ConnectionException("Cannot Send");
                 }
                 else
                 {
-                    throw new Connection_Exception( "Invalid Connection Type");
+                    throw new ConnectionException( "Invalid Connection Type");
                 }
             }
             catch (System.Exception ex)
@@ -1045,7 +1016,7 @@ namespace SensMaster
                 while (!Done)
                 {
                     //Enter here when Single Tag Read Type
-                    if (Reader_Param.Read_Type == 0x01)   //Single Tag
+                    if (reader.Read_Type == Reader.SINGLETAG)   //Single Tag
                     {
                         #region Single Tag operation
                         //Get Tag EPC Data Operation
@@ -1072,7 +1043,7 @@ namespace SensMaster
                                 if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08) // Detect no Tag || Parameter wrong || Non-existing data area
                                     Connection_SendCommand(List_TagID_EPC());
                                 else
-                                    throw new Operation_Exception(Parse_ErrorCode(ERROR_Code));
+                                    throw new OperationException(Parse_ErrorCode(ERROR_Code));
                             }
                             else
                             {
@@ -1093,7 +1064,7 @@ namespace SensMaster
                                 string UMEM_String = Encoding.ASCII.GetString(UMEM_Bytes, 8, 32);
                                 string[] UMEM_Split = UMEM_String.Split('|');
 
-                                Tag CurrentTag = new Tag(TID);
+                                Tag CurrentTag = new Tag(reader, TID);
 
                                 if (UMEM_Split[0] == "B")   //Body Tag
                                 {
@@ -1125,7 +1096,7 @@ namespace SensMaster
                                 if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08) // Detect no Tag || Parameter wrong || Non-existing data area
                                     Connection_SendCommand(Read_Block_UMEM((byte[])Reader_Param.Tag_EPC_Checklist[Reader_Param.Tag_EPC_Checklist.Count-1]));
                                 else
-                                    throw new Operation_Exception(Parse_ErrorCode(ERROR_Code));
+                                    throw new OperationException(Parse_ErrorCode(ERROR_Code));
                             }
                             else
                             {
@@ -1136,7 +1107,7 @@ namespace SensMaster
 
                         #endregion Single Tag operation
                     }
-                    else if (Reader_Param.Read_Type == 0x03)   //Marriage Tag
+                    else if (reader.Read_Type == Reader.MARRIAGETAG)   //Marriage Tag
                     {
                         #region Marriage Tag operation
                         //Get Tag EPC Data Operation
@@ -1171,7 +1142,7 @@ namespace SensMaster
                                 if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08) // Detect no Tag || Parameter wrong || Non-existing data area
                                     Connection_SendCommand(List_TagID_EPC());
                                 else
-                                    throw new Operation_Exception(Parse_ErrorCode(ERROR_Code));
+                                    throw new OperationException(Parse_ErrorCode(ERROR_Code));
                             }
                             else
                             {
@@ -1221,16 +1192,16 @@ namespace SensMaster
                                         if (ChassisTag_UMEM_Split[1].Replace("\0", "") == EngineTag_UMEM_Split[2].Replace("\0", "") && 
                                             ChassisTag_UMEM_Split[2].Replace("\0", "") == EngineTag_UMEM_Split[1].Replace("\0", ""))
                                         {
-                                            Body BodyTag = new Body(BodyTag_TID, BodyTag_UMEM_Split[1]);
-                                            Chassis ChassisTag = new Chassis(ChassisTag_TID,EngineTag_UMEM_Split[1],EngineTag_UMEM_Split[2]);
-                                            Engine EngineTag = new Engine(EngineTag_TID,EngineTag_UMEM_Split[1],EngineTag_UMEM_Split[2]);
+                                            Body BodyTag = new Body(reader, BodyTag_TID, BodyTag_UMEM_Split[1]);
+                                            Chassis ChassisTag = new Chassis(reader, ChassisTag_TID, EngineTag_UMEM_Split[1], EngineTag_UMEM_Split[2]);
+                                            Engine EngineTag = new Engine(reader, EngineTag_TID, EngineTag_UMEM_Split[1], EngineTag_UMEM_Split[2]);
                                             Tag_List.AddRange(new Tag[]{BodyTag, ChassisTag, EngineTag});
                                             Complete(Tag_List.ToArray());
                                             Done = true;
                                         }
                                         else
                                         {
-                                            throw new Operation_Exception("Chassis & Engine Mismatch!");
+                                            throw new OperationException("Chassis & Engine Mismatch!");
                                         }
                                     }
                                 }
@@ -1242,7 +1213,7 @@ namespace SensMaster
                                 if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08) // Detect no Tag || Parameter wrong || Non-existing data area
                                     Connection_SendCommand(Read_Block_UMEM((byte[])Marriage_EPC_CheckList[0]));
                                 else
-                                    throw new Operation_Exception(Parse_ErrorCode(ERROR_Code));
+                                    throw new OperationException(Parse_ErrorCode(ERROR_Code));
                             }
                             else
                             {
@@ -1255,7 +1226,7 @@ namespace SensMaster
                     }
 
                     if (OperationTimeOut <= 0)
-                        throw new Operation_Exception("Operation Timeout");
+                        throw new OperationException("Operation Timeout");
                 }
             }
             catch (Exception ex)
@@ -1274,7 +1245,7 @@ namespace SensMaster
         /// or
         /// Operation Timeout
         /// </exception>
-        public void Get_List_Of_Tag_Test(Func<Tag[], bool> Complete)
+        public void Get_List_Of_Tag_Test_(Func<Tag[], bool> Complete)
         {
             try
             {
@@ -1284,7 +1255,7 @@ namespace SensMaster
                 tmrDataProcessing.Start();
                 lock (receivedDataList_LOCK)
                 {
-                    if (Reader_Param.Read_Type == 0x01) 
+                    if (reader.Read_Type == Reader.SINGLETAG) 
                     {
                         byte TID = (byte)ran.Next(0, 11);
                         byte Pair_Choice= (byte)ran.Next(0, 11);
