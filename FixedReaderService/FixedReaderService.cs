@@ -6,11 +6,19 @@ using System.Diagnostics;
 using System.Linq;
 using System.ServiceProcess;
 using System.Text;
+using System.Data.SqlClient;
+using System.Configuration;
+using System.Threading.Tasks;
 
 namespace SensMaster
 {
+   
     public partial class FixedReaderService : ServiceBase
     {
+        SqlConnection SQLConnection;
+        Dictionary<string, Reader> readers = new Dictionary<string, Reader>();
+
+
         public FixedReaderService()
         {
             InitializeComponent();
@@ -28,6 +36,14 @@ namespace SensMaster
         {
             eventLogger.WriteEntry("Monitoring started");
             pmsTimer.Start();
+            string connectionString = ConfigurationManager.ConnectionStrings["SensMaster.Properties.Settings.pmsConnectionString"].ConnectionString ;
+            SQLConnection = new SqlConnection(connectionString);
+            SQLConnection.Open();
+            Int32 interval;
+            if(Int32.TryParse( ConfigurationManager.AppSettings["db_polling_interval"], out interval)){
+                DBtimer.Interval  = interval;
+                DBtimer.Start();
+            }
         }
 
         protected override void OnPause()
@@ -44,11 +60,40 @@ namespace SensMaster
         protected override void OnStop()
         {
             pmsTimer.Stop();
+            SQLConnection.Close();
+        }
+        private bool process(Tag[] tags)
+        {
+            return true;
         }
 
         private void pmsTimer_Tick(object sender, EventArgs e)
         {
+            foreach (Reader reader in readers.Values)
+            {
+                reader.Poll(process);
+            }
+        }
 
+        private void DBtimer_Tick(object sender, EventArgs e)
+        {
+            DataTable infoTable = new DataTable();
+            SqlDataAdapter da = new SqlDataAdapter("SELECT * from Reader", SQLConnection);
+            da.Fill(infoTable);
+
+            foreach (DataRow row in infoTable.Rows)
+            {
+                string ip = row["currentReaderIP"] as string;
+                Reader reader = new Reader(row["currentReaderIP"].ToString(), 22, "Damansara", Reader.SINGLETAG);
+                if (readers.ContainsKey(ip))
+                {
+                    readers[ip] = reader;
+                }
+                else
+                {
+                    readers.Add(ip, reader);
+                }
+            }
         }
     }
 }

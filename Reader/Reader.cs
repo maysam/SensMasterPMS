@@ -2,69 +2,45 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Numerics;
 
 namespace SensMaster
 {
-    public class Tag
-    {
-        public string PunchBody;
-        public string ChassisNo;
-        public string EngineNo;
-        public byte[] ID;
-
-        public Tag(byte[] TagID)
-        {
-            ID = TagID;
-        }
-    }
-
-    public class Chassis : Tag
-    {
-        public Chassis(byte[] TagID, string Chassis_Number, string Engine_Number)
-            : base(TagID)
-        {
-            ChassisNo = Chassis_Number;
-            EngineNo = Engine_Number;
-        }
-    }
-
-    public class Body : Tag
-    {
-        public Body(byte[] TagID, string Body_Number)
-            : base(TagID)
-        {
-            PunchBody = Body_Number;
-        }
-    }
-
-    public class Engine : Tag
-    {
-        public Engine(byte[] TagID, string Engine_Number, string Chassis_Number)
-            : base(TagID)
-        {
-            EngineNo = Engine_Number;
-            ChassisNo = Chassis_Number;
-        }
-    }
-
     public class Reader
     {
+        // Read Type Code
+        public static readonly byte SINGLETAG = 0x01;
+        public static readonly byte MARRIAGETAG = 0x03;
+
+        // Connection Status Code
+        public static readonly byte IDLE = 0x00;
+        public static readonly byte OK = 0x01;
+        public static readonly byte PINGFAIL = 0x02;
+        public static readonly byte NOTRESPONDING = 0x03;
+
+        // Current OP Code
+        public static readonly byte STOPSEARCH = 0x00;
+        public static readonly byte STARTSEARCH = 0x01;
+        public static readonly byte DFU = 0x02;
+
+        private RFIdent_Class RF_Reader;
+        private string TCP_IP_Address;
+        private int TCP_Port;
+        private string Location_Name;
+        private byte Read_Type;
+
         public Reader(string TCP_IP_Address, int TCP_Port, string Location_Name, byte Read_Type)
         {
+            RF_Reader = new RFIdent_Class(Read_Type);
+            this.TCP_IP_Address = TCP_IP_Address;
+            this.TCP_Port = TCP_Port;
+            this.Location_Name = Location_Name;
+            this.Read_Type = Read_Type;
         }
 
-        public Reader()
+        public void Poll(Func<Tag[], bool> Display)
         {
-            // TODO: Complete member initialization
+            RF_Reader.Get_List_Of_Tag_Test(Display);
         }
-
-        public Tag[] Poll()
-        {
-            return new Tag[] { };
-        }
-
-
 
         public Tag ReadWordBlock(byte[] TagID)
         {
@@ -122,5 +98,7 @@ namespace SensMaster
                     throw new Exception("Invalid Tag");
             }
         }
+
+
     }
 }
