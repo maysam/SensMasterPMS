@@ -1,47 +1,102 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
+using System.Net;
 using System.Text;
+using System.Timers;
 
 namespace SensMaster
 {
+    // Connection Status Code
+    public enum ConnectionStatus
+    {
+        IDLE = 0x00,
+        OK = 0x01,
+        PING_FAIL = 0x02,
+        NOT_RESPONDING = 0x03
+    }
+    // Read Type Code
+    public enum ReaderType : byte
+    {
+        SINGLETAG = 0x01,
+        MARRIAGETAG = 0x03
+    }
     public class Reader
     {
-        // Read Type Code
-        public static readonly byte SINGLETAG = 0x01;
-        public static readonly byte MARRIAGETAG = 0x03;
-
-        // Connection Status Code
-        public static readonly byte IDLE = 0x00;
-        public static readonly byte OK = 0x01;
-        public static readonly byte PINGFAIL = 0x02;
-        public static readonly byte NOTRESPONDING = 0x03;
-
         // Current OP Code
-        public static readonly byte STOPSEARCH = 0x00;
-        public static readonly byte STARTSEARCH = 0x01;
+        public static readonly byte STOP_SEARCH = 0x00;
+        public static readonly byte START_SEARCH = 0x01;
         public static readonly byte DFU = 0x02;
 
-        private RFIdent_Class RF_Reader;
-        public string TCP_IP_Address;
-        private int TCP_Port;
+        private ReaderDevice device;
+        public IPAddress IP;
+        public int TCP_Port;
         private string Location_Name;
-        public byte Read_Type;
+        public ReaderType Read_Type;
         public string ID;
 
-        public Reader(string id, string TCP_IP_Address, int TCP_Port, string Location_Name, byte Read_Type)
+        private ConnectionStatus status = ConnectionStatus.IDLE;
+        public Timer health_check_poll_timer;
+        public Timer health_check_update_timer;
+        public Action<IPAddress, ConnectionStatus> do_update_health;
+        private Action<Exception> logger;
+
+        public Reader(string id, string TCP_IP_Address, int port, string location, ReaderType Read_Type,
+            int healthCheckPollingInterval, int healthCheckUpdateInterval, Action<IPAddress, ConnectionStatus> update_health, Action<Exception> logger)
         {
-            RF_Reader = new RFIdent_Class(this);
+            IP = IPAddress.Parse(TCP_IP_Address);
+            health_check_poll_timer = new Timer(healthCheckPollingInterval);
+            health_check_poll_timer.Elapsed += health_check_poll_timer_Elapsed;
+            health_check_update_timer = new Timer(healthCheckUpdateInterval);
+            health_check_update_timer.Elapsed += health_check_update_timer_Elapsed;
             ID = id;
-            this.TCP_IP_Address = TCP_IP_Address;
-            this.TCP_Port = TCP_Port;
-            this.Location_Name = Location_Name;
+            this.TCP_Port = port;
+            this.Location_Name = location;
             this.Read_Type = Read_Type;
+            this.logger = logger;
+            do_update_health = update_health;
+            device = new RFIdentReader(this);
+            device.connect();
+        }
+
+        public void updateReader(string location, ReaderType Read_Type, int healthCheckPollingInterval, int healthCheckUpdateInterval)
+        {
+            health_check_poll_timer.Interval = healthCheckPollingInterval;
+            health_check_update_timer.Interval = healthCheckUpdateInterval;
+            this.Location_Name = location;
+            this.Read_Type = Read_Type;
+        }
+
+        private void health_check_update_timer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            do_update_health(IP, status);
+        }
+
+        private void health_check_poll_timer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            try
+            {
+                if (device.ping())
+                {
+                    status = ConnectionStatus.OK;
+                }
+                else
+                {
+                    status = ConnectionStatus.PING_FAIL;
+                    do_update_health(IP, status);
+                }
+            }
+            catch (Exception ex)
+            {
+
+                connection_failing(ex);
+            }
         }
 
         public void Poll(Func<Tag[], bool> Display)
         {
-            RF_Reader.Get_List_Of_Tag(Display);
+            device.Get_List_Of_Tag(Display);
         }
 
         public Tag ParseUserMemory(byte[] read_data)
@@ -95,6 +150,26 @@ namespace SensMaster
             }
         }
 
+        public void Start()
+        {
+            health_check_poll_timer.Start();
+            health_check_update_timer.Start();
+        }
 
+        public void Stop()
+        {
+            health_check_poll_timer.Stop();
+            health_check_update_timer.Stop();
+        }
+
+        internal void connection_failing(Exception ex = null)
+        {
+            if (logger != null)
+            {
+                logger(ex);
+            }
+            status = ConnectionStatus.NOT_RESPONDING;
+            do_update_health(IP, status);
+        }
     }
 }

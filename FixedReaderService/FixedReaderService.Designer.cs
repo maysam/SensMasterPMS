@@ -30,20 +30,8 @@
         {
             this.components = new System.ComponentModel.Container();
             this.eventLogger = new System.Diagnostics.EventLog();
-            this.pmsTimer = new System.Windows.Forms.Timer(this.components);
-            this.DBtimer = new System.Windows.Forms.Timer(this.components);
             ((System.ComponentModel.ISupportInitialize)(this.eventLogger)).BeginInit();
-            // 
-            // pmsTimer
-            // 
-            this.pmsTimer.Tick += new System.EventHandler(this.pmsTimer_Tick);
-            // 
-            // DBtimer
-            // 
-            this.DBtimer.Tick += new System.EventHandler(this.DBtimer_Tick);
-            // 
-            // FixedReaderService
-            // 
+            
             this.ServiceName = "Service1";
             ((System.ComponentModel.ISupportInitialize)(this.eventLogger)).EndInit();
 
@@ -52,7 +40,5 @@
         #endregion
 
         private System.Diagnostics.EventLog eventLogger;
-        private System.Windows.Forms.Timer pmsTimer;
-        private System.Windows.Forms.Timer DBtimer;
     }
 }

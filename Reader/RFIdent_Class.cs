@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Net.Sockets;
 using System.IO;
 using System.Collections.Concurrent;
 using System.Timers;
@@ -10,44 +9,43 @@ using System.Net.NetworkInformation;
 using System.Reflection;
 using System.Collections.Specialized;
 using System.Threading;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 
 namespace SensMaster
 {
     /// <summary>
     /// 
     /// </summary>
-    class RFIdent_Class
+    class RFIdentReader : ReaderDevice
     {
-        class Reader_Params
+        private Read_Memory_Operation Current_Read_Memory_OP = Read_Memory_Operation.Idle;
+        private OrderedDictionary Tag_EPC_Checklist = new OrderedDictionary(10);
+        private OrderedDictionary Tag_UMEM_Checklist = new OrderedDictionary(10);
+      
+        enum Read_Memory_Operation : byte
         {
-            public byte Current_Read_Memory_OP = 0x00;
-            public OrderedDictionary Tag_EPC_Checklist =  new OrderedDictionary(10);
-            public OrderedDictionary Tag_UMEM_Checklist = new OrderedDictionary(10);
-        }
-
-        class Read_Memory_Operation
-        {
-            public static readonly byte Idle = 0x00;
-            public static readonly byte Get_EPC = 0x01;
-            public static readonly byte Get_UMEM = 0x02;
+            Idle = 0x00,
+            Get_EPC = 0x01,
+            Get_UMEM = 0x02
         }
         
 
         #region Constructor & Destructor
 
         Reader reader;
-        Reader_Params Reader_Param = new Reader_Params();
 
-        public RFIdent_Class(Reader reader)
+        public RFIdentReader(Reader reader)
         {
             this.reader = reader;
-            Reader_Param.Tag_EPC_Checklist.Clear();
-            Reader_Param.Tag_UMEM_Checklist.Clear();
+            Tag_EPC_Checklist.Clear();
+            Tag_UMEM_Checklist.Clear();
             tmrConnection_Init();
             tmrDataProcessing_Init(); 
         }
 
-        ~RFIdent_Class()
+        ~RFIdentReader()
         {
 
         }
@@ -57,41 +55,15 @@ namespace SensMaster
 
         #region Custom Exception Class
 
-        class ConnectionException : Exception
-        {
-            private string MSG;
+        class ConnectionException : Exception { }
+        class PingException : Exception { }
+        class OperationException : Exception {
+            private string p;
 
-            public ConnectionException(string MSG)
+            public OperationException(string p)
             {
                 // TODO: Complete member initialization
-                this.MSG = MSG;
-            }
-
-            public override string Message
-            {
-                get
-                {
-                    return MSG;
-                }
-            }
-        }
-         
-        class OperationException : Exception
-        {
-            private string MSG;
-
-            public OperationException(string MSG)
-            {
-                // TODO: Complete member initialization
-                this.MSG = MSG;
-            }
-
-            public override string Message
-            {
-                get
-                {
-                    return MSG;
-                }
+                this.p = p;
             }
         }
 
@@ -283,7 +255,7 @@ namespace SensMaster
         static readonly object receivedDataList_LOCK = new object();
         List<byte> receivedDataList = new List<byte>();
         ConcurrentQueue<byte[]> CommandQueue = new ConcurrentQueue<byte[]>();
-        Connection_Type Con_Type = new Connection_Type();
+        Connection_Type Con_Type = Connection_Type.TCP;
 
         private void tmrConnection_Init()
         {
@@ -298,7 +270,7 @@ namespace SensMaster
         /// </summary>
         /// <param name="TCP_IP_Address">The IP Address</param>
         /// <returns>True = Ping Successful, False = Ping Fail</returns>
-        public bool Connection_Ping(string TCP_IP_Address)
+        public bool ping()
         {
             //Ping the IP address before attempting to make a connection
             //will save your time on waiting for the client to connect to 
@@ -314,7 +286,7 @@ namespace SensMaster
             string data = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
             byte[] buffer = Encoding.ASCII.GetBytes(data);
             int timeout = 120;
-            PingReply reply = pingSender.Send(TCP_IP_Address, timeout, buffer, options);
+            PingReply reply = pingSender.Send(reader.IP, timeout, buffer, options);
 
             return (reply.Status == IPStatus.Success);
         }
@@ -324,65 +296,70 @@ namespace SensMaster
         /// </summary>
         /// <param name="TCP_IP_Address">TCP/IP Address. E.g. 192.168.0.100</param>
         /// <param name="TCP_Port_Number">TCP Port Number. E.g. 2101</param>
-        public bool Connection_Connect(string TCP_IP_Address, int TCP_Port_Number)
+        public void connect()
         {
-            try
+            //Ping the IP address before attempting to make a connection
+            //will save your time on waiting for the client to connect to 
+            //a non existing ip address
+            Ping pingSender = new Ping();
+            PingOptions options = new PingOptions();
+
+            // Use the default Ttl value which is 128,
+            // but change the fragmentation behavior.
+            options.DontFragment = true;
+
+            // Create a buffer of 32 bytes of data to be transmitted.
+            string data = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+            byte[] buffer = Encoding.ASCII.GetBytes(data);
+            int timeout = 120;
+            PingReply reply = pingSender.Send(reader.IP, timeout, buffer, options);
+
+            if (reply.Status == IPStatus.Success)
             {
-                //Ping the IP address before attempting to make a connection
-                //will save your time on waiting for the client to connect to 
-                //a non existing ip address
-                Ping pingSender = new Ping();
-                PingOptions options = new PingOptions();
-
-                // Use the default Ttl value which is 128,
-                // but change the fragmentation behavior.
-                options.DontFragment = true;
-
-                // Create a buffer of 32 bytes of data to be transmitted.
-                string data = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-                byte[] buffer = Encoding.ASCII.GetBytes(data);
-                int timeout = 120;
-                PingReply reply = pingSender.Send(TCP_IP_Address, timeout, buffer, options);
-
-                if (reply.Status == IPStatus.Success)
+                if (tcpClient == null)
                 {
-                    if (tcpClient != null && tcpClient.Connected == true)
+
+                    int clientPort = 2101;
+                    IPAddress ipAddress = Dns.GetHostEntry(Dns.GetHostName()).AddressList[3];
+                    IPEndPoint ipLocalEndPoint = new IPEndPoint(ipAddress, clientPort);
+                    tcpClient = new TcpClient(ipLocalEndPoint);
+                }
+                if (!tcpClient.Connected)
+                {
+                    try
+                    {
+                        tcpClient.Connect(reader.IP, reader.TCP_Port);
+
+                        if (tcpClient.Connected)
+                        {
+                            // with the exception handling, we probably don't need to check connected
+                            TcpStream_Client = tcpClient.GetStream();
+                            tmrTcpPolling.Start();
+                            tmrSendCommand.Start();
+                            tmrDataProcessing.Start();
+                        }
+                        else
+                        {
+                            reader.connection_failing();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        reader.connection_failing(ex);
                         tcpClient.Close();
-
-                    tcpClient = new TcpClient();
-                    tcpClient.Connect(TCP_IP_Address, TCP_Port_Number);
-
-                    if (tcpClient.Connected)
-                    {
-                        TcpStream_Client = tcpClient.GetStream();
-                        tmrTcpPolling.Start();
-                        Con_Type = Connection_Type.TCP;
-                        tmrSendCommand.Start();
-                        tmrDataProcessing.Start();
-                        
-                        return true;
                     }
-                    else
-                    {
-                        throw new ConnectionException("Connect Fail");
-                    }
-                }
-                else
-                {
-                    throw new ConnectionException("Ping Fail");
                 }
             }
-            catch (System.Exception ex)
+            else
             {
-                //Handle Exeption Here
+                reader.connection_failing(new TimeoutException("Ping Timeout"));
             }
-            return false;
         }
 
         /// <summary>
         /// Disconnect from TM70x
         /// </summary>
-        public bool Connection_Disconnect()
+        public bool disconnect()
         {
             try
             {
@@ -404,9 +381,9 @@ namespace SensMaster
 
                 return true;
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                //Handle Exeption Here
+                reader.connection_failing(ex);
             }
 
             return false;
@@ -428,16 +405,16 @@ namespace SensMaster
                         return true;
                     }
 
-                    throw new ConnectionException("Cannot Send");
+                    throw new ConnectionException();
                 }
                 else
                 {
-                    throw new ConnectionException( "Invalid Connection Type");
+//                    throw new NotImplementedException("Serial Connection is not implemented!");
                 }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                //Handle Exception Here
+                reader.connection_failing(ex);
             }
 
             return false;
@@ -447,19 +424,9 @@ namespace SensMaster
         /// Queue Command to Send to TM70x
         /// </summary>
         /// <param name="CommandData">The command data.</param>
-        public bool Connection_QueueCommand(byte[] CommandData)
+        public void Connection_QueueCommand(byte[] CommandData)
         {
-            try
-            {
-                CommandQueue.Enqueue(CommandData);
-                return true;
-            }
-            catch (System.Exception ex)
-            {
-                //Handle Exception Here
-            }
-
-            return false;
+            CommandQueue.Enqueue(CommandData);
         }
 
         /// <summary>
@@ -483,9 +450,9 @@ namespace SensMaster
                     }
                 }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
-                //Handle Exception Here
+                reader.connection_failing(ex);
             }
         }
 
@@ -505,7 +472,7 @@ namespace SensMaster
             }
             catch (Exception ex)
             {
-                //Handle Exception Here
+                reader.connection_failing(ex);
             }
         }
         #endregion
@@ -662,7 +629,7 @@ namespace SensMaster
             }
             catch (Exception ex)
             {
-
+                reader.connection_failing(ex);
             }
         }
 
@@ -947,16 +914,16 @@ namespace SensMaster
         /// <returns>True = Exist, False = New Record.</returns>
         private bool Check_Tag_EPC_Checklist(byte[] EPC_Bytes)
         {
-            if (Reader_Param.Tag_EPC_Checklist.Contains(EPC_Bytes))
+            if (Tag_EPC_Checklist.Contains(EPC_Bytes))
             {
                 return true;
             }
             else
             {
-                if (Reader_Param.Tag_EPC_Checklist.Count >= 10)
-                    Reader_Param.Tag_EPC_Checklist.RemoveAt(0);
+                if (Tag_EPC_Checklist.Count >= 10)
+                    Tag_EPC_Checklist.RemoveAt(0);
 
-                Reader_Param.Tag_EPC_Checklist.Add(EPC_Bytes, 0);
+                Tag_EPC_Checklist.Add(EPC_Bytes, 0);
                 
                 return false;
             }
@@ -969,16 +936,16 @@ namespace SensMaster
         /// <returns>True = Exist, False = New Record.</returns>
         private bool Check_Tag_UMEM_Checklist(byte[] UMEM_Bytes)
         {
-            if (Reader_Param.Tag_UMEM_Checklist.Contains(UMEM_Bytes))
+            if (Tag_UMEM_Checklist.Contains(UMEM_Bytes))
             {
                 return true;
             }
             else
             {
-                if (Reader_Param.Tag_UMEM_Checklist.Count >= 10)
-                    Reader_Param.Tag_UMEM_Checklist.RemoveAt(0);
+                if (Tag_UMEM_Checklist.Count >= 10)
+                    Tag_UMEM_Checklist.RemoveAt(0);
 
-                Reader_Param.Tag_UMEM_Checklist.Add(UMEM_Bytes, 0);
+                Tag_UMEM_Checklist.Add(UMEM_Bytes, 0);
 
                 return false;
             }
@@ -999,7 +966,7 @@ namespace SensMaster
         {
             try
             {
-                int OperationTimeOut = 500;
+                int OperationTimeOut = 1500;
                 bool Done = false;
                 List<Tag> Tag_List = new List<Tag>();
                 byte[] EPC_Bytes;
@@ -1008,19 +975,19 @@ namespace SensMaster
                 OrderedDictionary Marriage_EPC_CheckList = new OrderedDictionary(3);
                 OrderedDictionary Marriage_UMEM_CheckList = new OrderedDictionary(3);
 
-                Reader_Param.Current_Read_Memory_OP = Read_Memory_Operation.Get_EPC;
+                Current_Read_Memory_OP = Read_Memory_Operation.Get_EPC;
 
                 //Start Reading Tag
                 Connection_SendCommand(List_TagID_EPC());
-                
+
                 while (!Done)
                 {
                     //Enter here when Single Tag Read Type
-                    if (reader.Read_Type == Reader.SINGLETAG)   //Single Tag
+                    if (reader.Read_Type == ReaderType.SINGLETAG)   //Single Tag
                     {
                         #region Single Tag operation
                         //Get Tag EPC Data Operation
-                        if (Reader_Param.Current_Read_Memory_OP == Read_Memory_Operation.Get_EPC)
+                        if (Current_Read_Memory_OP == Read_Memory_Operation.Get_EPC)
                         {
                             //Check if there is any new EPC data
                             if (EPC_Queue.TryDequeue(out EPC_Bytes))
@@ -1029,7 +996,7 @@ namespace SensMaster
                                 if (!Check_Tag_EPC_Checklist(EPC_Bytes))
                                 {
                                     Connection_SendCommand(Read_Block_UMEM(EPC_Bytes));
-                                    Reader_Param.Current_Read_Memory_OP = Read_Memory_Operation.Get_UMEM;
+                                    Current_Read_Memory_OP = Read_Memory_Operation.Get_UMEM;
                                 }
                                 else
                                 {
@@ -1051,14 +1018,14 @@ namespace SensMaster
                                 Thread.Sleep(10);
                             }
                         }
-                        else if (Reader_Param.Current_Read_Memory_OP == Read_Memory_Operation.Get_UMEM)
+                        else if (Current_Read_Memory_OP == Read_Memory_Operation.Get_UMEM)
                         {
                             //Check if there is any new UMEM data
                             if (UMEM_Queue.TryDequeue(out UMEM_Bytes))
-                            { 
+                            {
                                 //Extract TID
                                 byte[] TID = new byte[8];
-                                Array.Copy(UMEM_Bytes, 0, TID, 0, 8);  
+                                Array.Copy(UMEM_Bytes, 0, TID, 0, 8);
 
                                 //Extract Tagtype & Body/Chassis/Engine No.
                                 string UMEM_String = Encoding.ASCII.GetString(UMEM_Bytes, 8, 32);
@@ -1093,10 +1060,22 @@ namespace SensMaster
                             else if (ERROR_Queue.TryDequeue(out ERROR_Code))
                             {
                                 //When these error code is received resend Read User Memory Block Command otherwise throw exception
-                                if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08) // Detect no Tag || Parameter wrong || Non-existing data area
-                                    Connection_SendCommand(Read_Block_UMEM((byte[])Reader_Param.Tag_EPC_Checklist[Reader_Param.Tag_EPC_Checklist.Count-1]));
+                                if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08)
+                                {
+                                    // Detect no Tag || Parameter wrong || Non-existing data area
+                                    object obj = Tag_EPC_Checklist[Tag_EPC_Checklist.Count - 1];
+                                    byte[] epc;
+                                    if (obj is Int32)
+                                        epc = BitConverter.GetBytes((Int32)Tag_EPC_Checklist[Tag_EPC_Checklist.Count - 1]);
+                                    else
+                                        epc = (byte[])obj;
+                                    byte[] command = Read_Block_UMEM(epc);
+                                    Connection_SendCommand(command);
+                                }
                                 else
+                                {
                                     throw new OperationException(Parse_ErrorCode(ERROR_Code));
+                                }
                             }
                             else
                             {
@@ -1107,11 +1086,11 @@ namespace SensMaster
 
                         #endregion Single Tag operation
                     }
-                    else if (reader.Read_Type == Reader.MARRIAGETAG)   //Marriage Tag
+                    else if (reader.Read_Type == ReaderType.MARRIAGETAG)   //Marriage Tag
                     {
                         #region Marriage Tag operation
                         //Get Tag EPC Data Operation
-                        if (Reader_Param.Current_Read_Memory_OP == Read_Memory_Operation.Get_EPC)
+                        if (Current_Read_Memory_OP == Read_Memory_Operation.Get_EPC)
                         {
                             //Check if there is any new EPC data
                             if (EPC_Queue.TryDequeue(out EPC_Bytes))
@@ -1132,7 +1111,7 @@ namespace SensMaster
                                 if (Marriage_EPC_CheckList.Count == 3)
                                 {
                                     Connection_SendCommand(Read_Block_UMEM((byte[])Marriage_EPC_CheckList[0]));
-                                    Reader_Param.Current_Read_Memory_OP = Read_Memory_Operation.Get_UMEM;
+                                    Current_Read_Memory_OP = Read_Memory_Operation.Get_UMEM;
                                 }
                             }
                             //Check if error is returned
@@ -1150,7 +1129,7 @@ namespace SensMaster
                                 Thread.Sleep(10);
                             }
                         }
-                        else if (Reader_Param.Current_Read_Memory_OP == Read_Memory_Operation.Get_UMEM)
+                        else if (Current_Read_Memory_OP == Read_Memory_Operation.Get_UMEM)
                         {
                             //Check if there is any new UMEM data
                             if (UMEM_Queue.TryDequeue(out UMEM_Bytes))
@@ -1189,13 +1168,13 @@ namespace SensMaster
                                         Array.Copy(ChassisTag_UMEM_Byte, 0, ChassisTag_TID, 0, 8);
                                         Array.Copy(EngineTag_UMEM_Byte, 0, EngineTag_TID, 0, 8);
 
-                                        if (ChassisTag_UMEM_Split[1].Replace("\0", "") == EngineTag_UMEM_Split[2].Replace("\0", "") && 
+                                        if (ChassisTag_UMEM_Split[1].Replace("\0", "") == EngineTag_UMEM_Split[2].Replace("\0", "") &&
                                             ChassisTag_UMEM_Split[2].Replace("\0", "") == EngineTag_UMEM_Split[1].Replace("\0", ""))
                                         {
                                             Body BodyTag = new Body(reader, BodyTag_TID, BodyTag_UMEM_Split[1]);
                                             Chassis ChassisTag = new Chassis(reader, ChassisTag_TID, EngineTag_UMEM_Split[1], EngineTag_UMEM_Split[2]);
                                             Engine EngineTag = new Engine(reader, EngineTag_TID, EngineTag_UMEM_Split[1], EngineTag_UMEM_Split[2]);
-                                            Tag_List.AddRange(new Tag[]{BodyTag, ChassisTag, EngineTag});
+                                            Tag_List.AddRange(new Tag[] { BodyTag, ChassisTag, EngineTag });
                                             Complete(Tag_List.ToArray());
                                             Done = true;
                                         }
@@ -1231,79 +1210,7 @@ namespace SensMaster
             }
             catch (Exception ex)
             {
-                //Handle Exception Here
-            }
-        }
-
-        /// <summary>
-        /// Test Function For "Get List Of Tag" Function(No Physical Reader Required).
-        /// </summary>
-        /// <param name="Complete">CallBack Function</param>
-        /// <exception cref="SensMaster.RFIdent_Class.Operation_Exception">
-        /// Chassis & Engine Mismatch!
-        /// or
-        /// or
-        /// Operation Timeout
-        /// </exception>
-        public void Get_List_Of_Tag_Test_(Func<Tag[], bool> Complete)
-        {
-            try
-            {
-                Random ran = new Random();
-                
-
-                tmrDataProcessing.Start();
-                lock (receivedDataList_LOCK)
-                {
-                    if (reader.Read_Type == Reader.SINGLETAG) 
-                    {
-                        byte TID = (byte)ran.Next(0, 11);
-                        byte Pair_Choice= (byte)ran.Next(0, 11);
-                        byte TagType = (byte)ran.Next(0, 2);
-                        //Dummy Data For Single Tag
-                        switch (TagType)
-                        {
-                            case 0:
-                                receivedDataList.AddRange(Generate_EPC_Dummy(TID, 'B'));
-                                receivedDataList.AddRange(Generate_UMEM_Dummy(TID, Pair_Choice, 'B'));
-                                break;
-                            case 1:
-                                receivedDataList.AddRange(Generate_EPC_Dummy(TID, 'C'));
-                                receivedDataList.AddRange(Generate_UMEM_Dummy(TID, Pair_Choice, 'C'));
-                                break;
-                            case 2:
-                                receivedDataList.AddRange(Generate_EPC_Dummy(TID, 'E'));
-                                receivedDataList.AddRange(Generate_UMEM_Dummy(TID, Pair_Choice, 'E'));
-                                break;
-                        }
-                        
-                    }
-                    else
-                    {
-                        byte B_TID = (byte)ran.Next(0, 11);
-                        byte C_TID = (byte)ran.Next(0, 11);
-                        byte E_TID = (byte)ran.Next(0, 11);
-                        byte Pair_Choice = (byte)ran.Next(0, 11);
-
-                        //Dummy Data For Marriage Tag
-                        receivedDataList.AddRange(Generate_EPC_Dummy(B_TID, 'B'));
-                        receivedDataList.AddRange(Generate_EPC_Dummy(C_TID, 'C'));
-                        receivedDataList.AddRange(Generate_EPC_Dummy(E_TID, 'E'));
-                        receivedDataList.AddRange(Generate_UMEM_Dummy(B_TID, Pair_Choice, 'B'));
-                        //Matching Chassis & Engine No.
-                        receivedDataList.AddRange(Generate_UMEM_Dummy(C_TID, Pair_Choice, 'C'));
-                        receivedDataList.AddRange(Generate_UMEM_Dummy(E_TID, Pair_Choice, 'E'));
-                        //Missmatch Chassis & Engine No.
-                        //receivedDataList.AddRange(Generate_UMEM_Dummy(C_TID, Pair_Choice, 'C'));
-                        //receivedDataList.AddRange(Generate_UMEM_Dummy(E_TID, Pair_Choice+1, 'E'));
-                    }
-                }
-
-                Get_List_Of_Tag(Complete);
-            }
-            catch (Exception ex)
-            {
-                //Handle Exception Here
+                reader.connection_failing(ex);
             }
         }
         #endregion

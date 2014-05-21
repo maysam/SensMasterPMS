@@ -13,12 +13,18 @@ namespace SensMaster
         /// </summary>
         static void Main()
         {
-            ServiceBase[] ServicesToRun;
-            ServicesToRun = new ServiceBase[] 
-			{ 
-				new FixedReaderService() 
-			};
-            ServiceBase.Run(ServicesToRun);
+            if (!Environment.UserInteractive)
+            {
+                ServiceBase[] ServicesToRun;
+                ServicesToRun = new ServiceBase[] { new FixedReaderService() };
+                ServiceBase.Run(ServicesToRun);
+            }
+            else
+            {
+                FixedReaderService sm = new FixedReaderService();
+                Console.Write("Service debug run");
+                sm.StartForDebugging();
+            }
         }
     }
 }

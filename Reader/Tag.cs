@@ -13,6 +13,7 @@ namespace SensMaster
         public byte[] ID;
         public Reader reader;
         public byte[] data = null;
+        public Char type;
 
         public Tag(Reader reader, byte[] TagID)
         {
@@ -26,6 +27,7 @@ namespace SensMaster
         public Chassis(Reader reader, byte[] TagID, string Chassis_Number, string Engine_Number)
             : base(reader, TagID)
         {
+            type = 'C';
             ChassisNo = Chassis_Number;
             EngineNo = Engine_Number;
         }
@@ -36,6 +38,7 @@ namespace SensMaster
         public Body(Reader reader, byte[] TagID, string Body_Number)
             : base(reader, TagID)
         {
+            type = 'B';
             PunchBody = Body_Number;
         }
     }
@@ -45,6 +48,7 @@ namespace SensMaster
         public Engine(Reader reader, byte[] TagID, string Engine_Number, string Chassis_Number)
             : base(reader, TagID)
         {
+            type = 'E';
             EngineNo = Engine_Number;
             ChassisNo = Chassis_Number;
         }

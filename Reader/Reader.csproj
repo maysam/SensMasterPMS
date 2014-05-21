@@ -46,6 +46,7 @@
   <ItemGroup>
     <Compile Include="Reader.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="ReaderDevice.cs" />
     <Compile Include="RFIdent_Class.cs" />
     <Compile Include="Tag.cs" />
   </ItemGroup>
