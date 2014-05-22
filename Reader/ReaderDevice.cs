@@ -10,6 +10,8 @@ namespace SensMaster
     {
         void connect();
         bool ping();
-        void Get_List_Of_Tag(Func<Tag[], bool> func);
+        void Get_List_Of_Tag(Action<Tag[], Action> func, Action post_func);
+
+        Tag ParseUserMemory(byte[] data_array);
     }
 }

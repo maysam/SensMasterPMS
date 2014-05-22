@@ -23,7 +23,8 @@ namespace SensMaster
             {
                 FixedReaderService sm = new FixedReaderService();
                 Console.Write("Service debug run");
-                sm.StartForDebugging();
+                sm.InternalStart();
+                while (true) ;
             }
         }
     }

@@ -20,9 +20,6 @@ namespace SensMaster
         public FixedReaderService()
         {
             InitializeComponent();
-            string connectionString = ConfigurationManager.ConnectionStrings["SensMaster.Properties.Settings.pmsConnectionString"].ConnectionString;
-            SQLConnection = new SqlConnection(connectionString);
-            SQLConnection.Open();
 
             if (!System.Diagnostics.EventLog.SourceExists("FixedReader"))
             {
@@ -35,18 +32,19 @@ namespace SensMaster
 
         protected override void OnStart(string[] args)
         {
-            StartForDebugging();
+            InternalStart();
         }
 
+        int server_port;
+        IPAddress server_ip;
 
-        internal void StartForDebugging()
+        internal void InternalStart()
         {
-
-            eventLogger.WriteEntry("Monitoring started");
             string connectionString = ConfigurationManager.ConnectionStrings["SensMaster.Properties.Settings.pmsConnectionString"].ConnectionString;
             SQLConnection = new SqlConnection(connectionString);
             SQLConnection.Open();
-            
+            eventLogger.WriteEntry("Monitoring started", EventLogEntryType.SuccessAudit);
+          
             Int32 interval;
             if (Int32.TryParse(ConfigurationManager.AppSettings["db_polling_interval"], out interval))
             {
@@ -59,7 +57,9 @@ namespace SensMaster
                 pmsTimer = new Timer(interval);
                 pmsTimer.Elapsed += pmsTimer_Elapsed;
             }
-            while (true) ;
+            Int32.TryParse(ConfigurationManager.AppSettings["client_port"], out server_port);
+            IPAddress.TryParse(ConfigurationManager.AppSettings["client_ip"], out server_ip);
+            DBtimer_Elapsed(null, null);
         }
         protected override void OnPause()
         {
@@ -70,7 +70,7 @@ namespace SensMaster
         protected override void OnContinue()
         {
             base.OnContinue();
-            pmsTimer.Start();
+            DBtimer_Elapsed(null, null);
         }
         protected override void OnStop()
         {
@@ -102,7 +102,7 @@ namespace SensMaster
             }
         }
         }
-        private bool process(Tag[] tags)
+        private void process(Tag[] tags, Action post_process)
         {
             if (tags.Length == 1)
             {
@@ -114,9 +114,15 @@ namespace SensMaster
 
                     cmd.Parameters.Add("@strReaderID", SqlDbType.VarChar).Value = tag.reader.ID;
                     cmd.Parameters.Add("@strReaderIP", SqlDbType.VarChar).Value = tag.reader.IP.ToString();
-                    cmd.Parameters.Add("@strTagType", SqlDbType.VarChar).Value = tag.type;
+                    cmd.Parameters.Add("@strTagType", SqlDbType.VarChar).Value = tag.type.ToString();
                     cmd.Parameters.Add("@strTagData", SqlDbType.VarChar).Value = tag.data;
                     cmd.Parameters.Add("@strTagID", SqlDbType.VarChar).Value = tag.ID;
+                    SqlParameter strResult = new SqlParameter("@strResult", SqlDbType.VarChar, 10);
+                    strResult.Direction = ParameterDirection.Output;
+                    cmd.Parameters.Add(strResult);
+                    SqlParameter strResultMessage = new SqlParameter("@strResultMessage", SqlDbType.VarChar, 50);
+                    strResultMessage.Direction = ParameterDirection.Output;
+                    cmd.Parameters.Add(strResultMessage);
 
                     cmd.ExecuteNonQuery();
                 }
@@ -138,12 +144,18 @@ namespace SensMaster
                         cmd.Parameters.Add("@strChassisNo", SqlDbType.VarChar).Value = chassis.ChassisNo;
                         cmd.Parameters.Add("@strEngineNo", SqlDbType.VarChar).Value = engine.EngineNo;
                         cmd.Parameters.Add("@strBodyNo", SqlDbType.VarChar).Value = body.PunchBody;
+                        SqlParameter strResult = new SqlParameter("@strResult", SqlDbType.VarChar, 10);
+                        strResult.Direction = ParameterDirection.Output;
+                        cmd.Parameters.Add(strResult);
+                        SqlParameter strResultMessage = new SqlParameter("@strResultMessage", SqlDbType.VarChar, 50);
+                        strResultMessage.Direction = ParameterDirection.Output;
+                        cmd.Parameters.Add(strResultMessage);
 
                         cmd.ExecuteNonQuery();
                     }
                 }
             }
-            return true;
+            post_process();
         }
 
         private void pmsTimer_Elapsed(object sender, ElapsedEventArgs e)
@@ -171,27 +183,29 @@ namespace SensMaster
                 foreach (DataRow row in infoTable.Rows)
                     try
                     {
-                        string ip = row["ReaderIP"].ToString();
+                        string reader_ip = row["ReaderIP"].ToString();
                         string location = "missing!";
                         Reader reader = null;
                         ReaderType reader_type = (ReaderType)byte.Parse(row["readTypeCode"].ToString());
                         int healthCheckPollingInterval = Int32.Parse(row["healthCheckPollingInterval"].ToString());
                         int healthCheckUpdateInterval = Int32.Parse(row["healthCheckUpdateInterval"].ToString());
-                        if (readers.ContainsKey(ip))
+                        if (readers.ContainsKey(reader_ip))
                         {
-                            reader = readers[ip];
+                            reader = readers[reader_ip];
                             reader.updateReader(location, reader_type, Int32.Parse(row["healthCheckPollingInterval"].ToString()), Int32.Parse(row["healthCheckUpdateInterval"].ToString()));
                         }
                         else
                         {
-                            reader = new Reader(row["readerID"].ToString(), ip, Int16.Parse(row["tcpPort"].ToString()), location, reader_type, healthCheckPollingInterval, healthCheckUpdateInterval, update_health_status, exception_handler);
-                            readers.Add(ip, reader);
+                            reader = new Reader(row["readerID"].ToString(), server_ip, server_port, reader_ip, Int16.Parse(row["tcpPort"].ToString()),
+                                location, reader_type, 
+                                healthCheckPollingInterval, healthCheckUpdateInterval, update_health_status, exception_handler);
+                            readers.Add(reader_ip, reader);
                         }
                         reader.Start();
                     }
                     catch (Exception ex)
                     {
-                        exception_handler(ex);
+                        exception_handler(null,ex);
                     }
                 if (pmsTimer != null)
                     pmsTimer.Start();
@@ -202,11 +216,14 @@ namespace SensMaster
             }
         }
 
-        private void exception_handler(Exception ex)
+        private void exception_handler(Reader reader, Exception ex)
         {
             if (ex != null)
             {
-                eventLogger.WriteEntry(ex.Message, EventLogEntryType.Error);
+                short id = 0;
+                if (reader != null)
+                    short.TryParse(reader.ID, out id);
+                eventLogger.WriteEntry(ex.Message, EventLogEntryType.Error, id);
             }
         }
     }

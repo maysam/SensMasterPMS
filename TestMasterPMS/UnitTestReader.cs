@@ -3,6 +3,7 @@ using System.Text;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System.Net;
 
 namespace SensMaster
 {
@@ -65,7 +66,7 @@ namespace SensMaster
             string data_string = "B|12ABC34|";
             Buffer.BlockCopy(new byte[] { 0x02, 0x03, 0x05, 0x08, 0x0D, 0x15, 0x22, 0x37 }, 0, data_array, 0 , 8);
             Buffer.BlockCopy(Encoding.ASCII.GetBytes(data_string),0, data_array, 8, data_string.Length);
-            Reader reader = new Reader("id", "ip", 22, "location", ReaderType.SINGLETAG, 1000, 1500, null, null);
+            Reader reader = new Reader("id", new IPAddress(1), 22, "ip", 22, "location", ReaderType.SINGLETAG, 1000, 1500, null, null);
             Tag tag = reader.ParseUserMemory(data_array);
             Assert.IsInstanceOfType(tag, typeof(Body));
             Assert.AreEqual(tag.PunchBody, "12ABC34");

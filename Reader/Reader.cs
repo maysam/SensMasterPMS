@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Timers;
 
@@ -40,10 +41,11 @@ namespace SensMaster
         public Timer health_check_poll_timer;
         public Timer health_check_update_timer;
         public Action<IPAddress, ConnectionStatus> do_update_health;
-        private Action<Exception> logger;
+        private Action<Reader, Exception> logger;
+        TcpClient tcpClient;
 
-        public Reader(string id, string TCP_IP_Address, int port, string location, ReaderType Read_Type,
-            int healthCheckPollingInterval, int healthCheckUpdateInterval, Action<IPAddress, ConnectionStatus> update_health, Action<Exception> logger)
+        public Reader(string id, IPAddress client_ip, Int32 client_port, string TCP_IP_Address, int port, string location, ReaderType Read_Type,
+            int healthCheckPollingInterval, int healthCheckUpdateInterval, Action<IPAddress, ConnectionStatus> update_health, Action<Reader, Exception> logger)
         {
             IP = IPAddress.Parse(TCP_IP_Address);
             health_check_poll_timer = new Timer(healthCheckPollingInterval);
@@ -56,7 +58,11 @@ namespace SensMaster
             this.Read_Type = Read_Type;
             this.logger = logger;
             do_update_health = update_health;
-            device = new RFIdentReader(this);
+
+            IPEndPoint ipLocalEndPoint = new IPEndPoint(client_ip, client_port);
+                tcpClient = new TcpClient(ipLocalEndPoint);
+            
+            device = new RFIdentReader(this, tcpClient);
             device.connect();
         }
 
@@ -93,60 +99,17 @@ namespace SensMaster
                 connection_failing(ex);
             }
         }
-
-        public void Poll(Func<Tag[], bool> Display)
+        DateTime waiting = DateTime.MinValue;
+        public void post_process()
         {
-            device.Get_List_Of_Tag(Display);
+            waiting = DateTime.MinValue;
         }
-
-        public Tag ParseUserMemory(byte[] read_data)
+        public void Poll(Action<Tag[], Action> process)
         {
-            byte[] id = new byte[8];
-            string tempNumber = "", Number1 = null, Number2 = null;
-
-            Buffer.BlockCopy(read_data, 0, id, 0, 8);
-            for (int i = 0; i < 40; i++)
+            //if (waiting == DateTime.MinValue)// || (DateTime.Now-waiting).TotalSeconds > 3000
             {
-                if (i < 8)
-                {
-                    id[i] = read_data[i];
-                }
-                else if (i == 9)
-                {
-                    if (read_data[i] != 0x7C)
-                    {
-                        throw new Exception("Invalid Tag(10)");
-                    }
-                }
-                else if (i > 9)
-                {
-                    if (read_data[i] == 0x00)
-                    {
-                        break;
-                    }
-                    else
-                        if (read_data[i] == 0x7C)
-                        {
-                            Number1 = tempNumber;
-                            tempNumber = "";
-                        }
-                        else
-                        {
-                            tempNumber += (char)read_data[i];
-                        }
-                }
-            }
-            Number2 = tempNumber;
-            switch ((char)read_data[8])
-            {
-                case 'E':
-                    return new Engine(this, read_data, Number1, Number2);
-                case 'C':
-                    return new Chassis(this, read_data, Number1, Number2);
-                case 'B':
-                    return new Body(this, read_data, Number1);
-                default:
-                    throw new Exception("Invalid Tag");
+                waiting = DateTime.Now;
+                device.Get_List_Of_Tag(process, post_process);
             }
         }
 
@@ -166,10 +129,21 @@ namespace SensMaster
         {
             if (logger != null)
             {
-                logger(ex);
+                logger(this, ex);
             }
+            waiting = DateTime.MinValue;
             status = ConnectionStatus.NOT_RESPONDING;
-            do_update_health(IP, status);
+            //do_update_health(IP, status);
+        }
+
+        internal void connect(TcpClient tcpClient)
+        {
+            tcpClient.Connect(IP, TCP_Port);
+        }
+
+        public Tag ParseUserMemory(byte[] data_array)
+        {
+            return device.ParseUserMemory(data_array);
         }
     }
 }
