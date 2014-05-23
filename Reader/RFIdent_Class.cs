@@ -904,7 +904,7 @@ namespace SensMaster
                     //Start Reading Tag
                     Connection_SendCommand(List_TagID_EPC());
 
-                    while (!Done)
+                    while (!Done && (OperationTimeOut > 0))
                     {
                         //Enter here when Single Tag Read Type
                         if (reader.Read_Type == ReaderType.SINGLETAG)   //Single Tag
@@ -1106,9 +1106,6 @@ namespace SensMaster
 
                             #endregion Marriage Tag operation
                         }
-
-                        if (OperationTimeOut <= 0)
-                            throw new OperationException("Operation Timeout");
                     }
                 }
                 catch (Exception ex)
