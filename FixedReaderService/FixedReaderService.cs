@@ -135,15 +135,15 @@ namespace SensMaster
                     Body body = (Body)tags.First(tag => tag is Body);
                     Chassis chassis = (Chassis)tags.First(tag => tag is Chassis);
                     Engine engine = (Engine)tags.First(tag => tag is Engine);
-                    using (SqlCommand cmd = new SqlCommand("sp_sm_singleTag", SQLConnection))
+                    using (SqlCommand cmd = new SqlCommand("sp_sm_marriageTag", SQLConnection))
                     {
                         cmd.CommandType = CommandType.StoredProcedure;
 
-                        cmd.Parameters.Add("@strReaderID", SqlDbType.VarChar).Value = body.reader.ID;
-                        cmd.Parameters.Add("@strReaderIP", SqlDbType.VarChar).Value = body.reader.IP.ToString();
-                        cmd.Parameters.Add("@strChassisNo", SqlDbType.VarChar).Value = chassis.ChassisNo;
-                        cmd.Parameters.Add("@strEngineNo", SqlDbType.VarChar).Value = engine.EngineNo;
-                        cmd.Parameters.Add("@strBodyNo", SqlDbType.VarChar).Value = body.PunchBody;
+                        cmd.Parameters.Add("@strReaderID", SqlDbType.VarChar, 20).Value = body.reader.ID;
+                        cmd.Parameters.Add("@strReaderIP", SqlDbType.VarChar, 23).Value = body.reader.IP.ToString();
+                        cmd.Parameters.Add("@strChassisNo", SqlDbType.VarChar, 30).Value = chassis.ChassisNo;
+                        cmd.Parameters.Add("@strEngineNo", SqlDbType.VarChar, 30).Value = engine.EngineNo;
+                        cmd.Parameters.Add("@strBodyNo", SqlDbType.VarChar, 30).Value = body.PunchBody;
                         SqlParameter strResult = new SqlParameter("@strResult", SqlDbType.VarChar, 10);
                         strResult.Direction = ParameterDirection.Output;
                         cmd.Parameters.Add(strResult);
