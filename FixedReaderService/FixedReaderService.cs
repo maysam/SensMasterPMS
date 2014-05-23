@@ -177,14 +177,18 @@ namespace SensMaster
                 if (pmsTimer is Timer)
                     pmsTimer.Stop();
                 infoTable = new DataTable();
-                da = new SqlDataAdapter("SELECT * from Reader", SQLConnection);
+
+                SqlCommand cmd = new SqlCommand("sp_sm_get_reader", SQLConnection);
+                cmd.CommandType = CommandType.StoredProcedure;
+                da = new SqlDataAdapter();
+                da.SelectCommand = cmd;
                 da.Fill(infoTable);
 
                 foreach (DataRow row in infoTable.Rows)
                     try
                     {
                         string reader_ip = row["ReaderIP"].ToString();
-                        string location = "missing!";
+                        string location = row["locationDesc"].ToString();
                         Reader reader = null;
                         ReaderType reader_type = (ReaderType)byte.Parse(row["readTypeCode"].ToString());
                         int healthCheckPollingInterval = Int32.Parse(row["healthCheckPollingInterval"].ToString());
