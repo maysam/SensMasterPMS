@@ -666,24 +666,6 @@ namespace SensMaster
         #region 4.Operation
 
         /// <summary>
-        /// Check if the EPC data already exist
-        /// </summary>
-        /// <param name="EPC_Bytes">The EPC Data Bytes.</param>
-        /// <returns>True = Exist, False = New Record.</returns>
-        private bool Check_Tag_EPC_Checklist(byte[] epc)
-        {
-            if (Tag_EPC_Checklist.Contains(epc))
-            {
-                return true;
-            }
-            else
-            {
-                Tag_EPC_Checklist.Add(epc);
-                return false;
-            }
-        }
-
-        /// <summary>
         /// Check if the UMEM data already exist
         /// </summary>
         /// <param name="EPC_Bytes">The UMEM Data Bytes.</param>
@@ -727,11 +709,10 @@ namespace SensMaster
                     OperationTimeOut = 5000;
                     bool Done = false;
                     List<Tag> Tag_List = new List<Tag>();
-                    byte[] EPC_Bytes;
+                    byte[] EPC_Bytes = null;
                     byte[] UMEM_Bytes;
                     byte ERROR_Code;
-                    OrderedDictionary Marriage_EPC_CheckList = new OrderedDictionary(3);
-                    Dictionary<byte,byte[]> Marriage_UMEM_CheckList = new Dictionary<byte,byte[]>();
+                    Dictionary<string, byte[]> Marriage_UMEM_CheckList = new Dictionary<string, byte[]>();
 
                     Current_Read_Memory_OP = Read_Memory_Operation.Get_EPC;
 
@@ -751,8 +732,9 @@ namespace SensMaster
                                 if (EPC_Queue.TryDequeue(out EPC_Bytes))
                                 {
                                     //Check If Tag EPC already been read before
-                                    if (!Check_Tag_EPC_Checklist(EPC_Bytes))
+                                    if (!Tag_EPC_Checklist.Contains(EPC_Bytes))
                                     {
+                                        Tag_EPC_Checklist.Add(EPC_Bytes);
                                         Connection_SendCommand(Read_Block_UMEM(EPC_Bytes));
                                         Current_Read_Memory_OP = Read_Memory_Operation.Get_UMEM;
                                     }
@@ -796,9 +778,8 @@ namespace SensMaster
                                     if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08)
                                     {
                                         // Detect no Tag || Parameter wrong || Non-existing data area
-                                        byte[] command = Read_Block_UMEM(Tag_EPC_Checklist.Last<byte[]>());
                                         //Thread.Sleep(400);
-                                        Connection_SendCommand(command);
+                                        Connection_SendCommand(Read_Block_UMEM(EPC_Bytes));
                                     }
                                     else
                                     {
@@ -823,25 +804,17 @@ namespace SensMaster
                                 //Check if there is any new EPC data
                                 if (EPC_Queue.TryDequeue(out EPC_Bytes))
                                 {
+
                                     //Check If Tag EPC already been read before
-                                    if (!Check_Tag_EPC_Checklist(EPC_Bytes))
+                                    if (!Marriage_UMEM_CheckList.ContainsKey(BitConverter.ToString(EPC_Bytes)))
                                     {
-                                        if (!Marriage_EPC_CheckList.Contains(EPC_Bytes[0]))
-                                        {
-                                            Marriage_EPC_CheckList.Add(EPC_Bytes[0], EPC_Bytes);
-                                        }
+                                        // read epc's usermem
+                                        Connection_SendCommand(Read_Block_UMEM(EPC_Bytes));
+                                        Current_Read_Memory_OP = Read_Memory_Operation.Get_UMEM;
                                     }
                                     else
                                     {
-                                        //Ignore already read tag
-                                    }
-
-                                    if (Marriage_EPC_CheckList.Count == 3)
-                                    {
-                                        Connection_SendCommand(Read_Block_UMEM((byte[])Marriage_EPC_CheckList[0]));
-                                        Current_Read_Memory_OP = Read_Memory_Operation.Get_UMEM;
-                                    } else {
-                                        
+                                        // read another epc
                                         Connection_SendCommand(List_TagID_EPC());
                                     }
                                 }
@@ -869,33 +842,21 @@ namespace SensMaster
                                 //Check if there is any new UMEM data
                                 if (UMEM_Queue.TryDequeue(out UMEM_Bytes))
                                 {
-                                    if (!Check_Tag_UMEM_Checklist(UMEM_Bytes))
+                                    if (!Marriage_UMEM_CheckList.ContainsKey(BitConverter.ToString( EPC_Bytes)))
                                     {
-                                        if (!Marriage_UMEM_CheckList.ContainsKey(UMEM_Bytes[8]))
-                                        {
-                                            Marriage_UMEM_CheckList.Add(UMEM_Bytes[8], UMEM_Bytes);
-                                        }
 
-                                        Marriage_EPC_CheckList.RemoveAt(0);
-
-                                        if (Marriage_EPC_CheckList.Count != 0)
+                                        Marriage_UMEM_CheckList.Add(BitConverter.ToString(EPC_Bytes), UMEM_Bytes);
+                                        Tag_List.Add(ParseUserMemory(UMEM_Bytes));
+                                        if (Tag_List.Count == 3)
                                         {
-                                            Connection_SendCommand(Read_Block_UMEM((byte[])Marriage_EPC_CheckList[0]));
-                                        }
-
-                                        if (Marriage_UMEM_CheckList.Count == 3)
-                                        {
-                                            Body BodyTag = (Body)ParseUserMemory(Marriage_UMEM_CheckList[0x42]);
-                                            Chassis ChassisTag =  (Chassis)ParseUserMemory(Marriage_UMEM_CheckList[0x43]);
-                                            Engine EngineTag =  (Engine)ParseUserMemory(Marriage_UMEM_CheckList[0x45]);
-                                            Tag_List.AddRange(new Tag[] { BodyTag, ChassisTag, EngineTag });
-                                            Complete(Tag_List.GetRange(0,3).ToArray(), PostComplete);
+                                            Complete(Tag_List.GetRange(0, 3).ToArray(), PostComplete);
                                             Done = true;
-
-                                            if (ChassisTag.EngineNo != EngineTag.EngineNo || ChassisTag.ChassisNo != EngineTag.ChassisNo)
-                                            {
-                                             //   throw new OperationException("Chassis & Engine Mismatch!");
-                                            }
+                                        }
+                                        else
+                                        {
+                                            //read next epc
+                                            Connection_SendCommand(List_TagID_EPC());
+                                            Current_Read_Memory_OP = Read_Memory_Operation.Get_EPC;
                                         }
                                     }
                                 }
@@ -904,7 +865,7 @@ namespace SensMaster
                                 {
                                     //When these error code is received resend Read User Memory Block Command otherwise throw exception
                                     if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08) // Detect no Tag || Parameter wrong || Non-existing data area
-                                        Connection_SendCommand(Read_Block_UMEM((byte[])Marriage_EPC_CheckList[0]));
+                                        Connection_SendCommand(Read_Block_UMEM(EPC_Bytes));
                                     else
                                         throw new OperationException(Parse_ErrorCode(ERROR_Code));
                                 }
