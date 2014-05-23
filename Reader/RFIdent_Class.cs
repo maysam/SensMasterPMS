@@ -1012,6 +1012,9 @@ namespace SensMaster
                                     {
                                         Connection_SendCommand(Read_Block_UMEM((byte[])Marriage_EPC_CheckList[0]));
                                         Current_Read_Memory_OP = Read_Memory_Operation.Get_UMEM;
+                                    } else {
+                                        
+                                        Connection_SendCommand(List_TagID_EPC());
                                     }
                                 }
                                 //Check if error is returned
