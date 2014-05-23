@@ -141,9 +141,9 @@ namespace SensMaster
 
                         cmd.Parameters.Add("@strReaderID", SqlDbType.VarChar, 20).Value = body.reader.ID;
                         cmd.Parameters.Add("@strReaderIP", SqlDbType.VarChar, 23).Value = body.reader.IP.ToString();
-                        cmd.Parameters.Add("@strChassisNo", SqlDbType.VarChar, 30).Value = chassis.ChassisNo;
-                        cmd.Parameters.Add("@strEngineNo", SqlDbType.VarChar, 30).Value = engine.EngineNo;
-                        cmd.Parameters.Add("@strBodyNo", SqlDbType.VarChar, 30).Value = body.PunchBody;
+                        cmd.Parameters.Add("@strChassisNo", SqlDbType.VarChar, 120).Value = chassis.ChassisNo;
+                        cmd.Parameters.Add("@strEngineNo", SqlDbType.VarChar, 120).Value = engine.EngineNo;
+                        cmd.Parameters.Add("@strBodyNo", SqlDbType.VarChar, 120).Value = body.PunchBody;
                         SqlParameter strResult = new SqlParameter("@strResult", SqlDbType.VarChar, 10);
                         strResult.Direction = ParameterDirection.Output;
                         cmd.Parameters.Add(strResult);

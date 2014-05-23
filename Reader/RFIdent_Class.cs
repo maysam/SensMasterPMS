@@ -21,7 +21,7 @@ namespace SensMaster
     class RFIdentReader : ReaderDevice
     {
         private Read_Memory_Operation Current_Read_Memory_OP = Read_Memory_Operation.Idle;
-        private OrderedDictionary Tag_EPC_Checklist = new OrderedDictionary(10);
+        private HashSet<byte[]> Tag_EPC_Checklist = new HashSet<byte[]>();
         private OrderedDictionary Tag_UMEM_Checklist = new OrderedDictionary(10);
       
         enum Read_Memory_Operation : byte
@@ -60,173 +60,7 @@ namespace SensMaster
         }
 
         #endregion
-
-
-        #region EPC & UMEM Dummy Data Response Generator
-        //F0-10-EE-01-06-45-00-00-00-E2-80-11-05-20-00-57-8C-4B
-        //f0:2a:ec:e2:80:11:05:20:00:57:8c:45:7c:41:48:47:31:20:31:38:35:37:31:35:7c:41:41:41:4e:50:52:37:31:4b:44:37:31:30:30:33:39:33:00:d5
-
-        /// <summary>
-        /// Generate The Reader Response for Reading 12 byte of EPC data
-        /// </summary>
-        /// <param name="TID_Offset">TID Offset</param>
-        /// <param name="TagType">Type of the tag: B = Body, C = Chassis, E = Engine</param>
-        /// <returns>Dummy Response in Byte Array</returns>
-        public byte[] Generate_EPC_Dummy(byte TID_Offset, char TagType)
-        {
-            List<byte> Response = new List<byte>();
-            Response.Add(0xF0); //BootCode
-            Response.Add(0x10); //Length
-            Response.Add(0xEE); //CMD Code
-            Response.Add(0x01); //EPC Bank
-            Response.Add(0x06); //Word Count
-            //Start EPC Data
-            Response.Add((byte)TagType); // Tag Type
-            Response.Add(0x00); // Reserved
-            Response.Add(0x00); // Reserved
-            Response.Add(0x00); // Reserved
-            Response.Add(0xE2); // TID
-            Response.Add(0x80); //
-            Response.Add(0x11); //
-            Response.Add(0x05); // 
-            Response.Add(0x20); //
-            Response.Add(0x00); //
-            Response.Add(0x57); //
-            Response.Add(TID_Offset); //
-            //End EPC Data
-            Response.Add(CalculateChecksum(Response.ToArray(), 0, Response.Count));
-            return Response.ToArray();
-        }
-
-        /// <summary>
-        /// Generate The Reader Response for Reading 40 byte of UMEM data
-        /// </summary>
-        /// <param name="TID_Offset">TID Offset</param>
-        /// <param name="Pair_Choice">Choice: 0~11. Each choice will generate a different Body/Chassis/Engine No. </param>
-        /// <param name="TagType">Type of the tag: B = Body, C = Chassis, E = Engine</param>
-        /// <returns>Dummy Response in Byte Array</returns>
-        public byte[] Generate_UMEM_Dummy(byte TID_Offset, byte Pair_Choice, char TagType)
-        {
-            List<byte> Response = new List<byte>();
-            Response.Add(0xF0); //BootCode
-            Response.Add(0x2A); //Length
-            Response.Add(0xEC); //CMD Code
-            //Start UMEM Data            
-            Response.Add(0xE2); // TID
-            Response.Add(0x80); //
-            Response.Add(0x11); //
-            Response.Add(0x05); // 
-            Response.Add(0x20); //
-            Response.Add(0x00); //
-            Response.Add(0x57); //
-            Response.Add(TID_Offset); //
-
-            if (TagType == 'B' || TagType == 'b')
-            {
-                switch (Pair_Choice % 12)
-                {
-                    case 0: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-1|"));
-                        break;
-                    case 1: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-2|"));
-                        break;
-                    case 2: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-3|"));
-                        break;
-                    case 3: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-4|"));
-                        break;
-                    case 4: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-5|"));
-                        break;
-                    case 5: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-6|"));
-                        break;
-                    case 6: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-7|"));
-                        break;
-                    case 7: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-8|"));
-                        break;
-                    case 8: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-9|"));
-                        break;
-                    case 9: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-10|"));
-                        break;
-                    case 10: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-11|"));
-                        break;
-                    case 11: Response.AddRange(Encoding.ASCII.GetBytes("B|PR71UK-4-12|"));
-                        break;
-                }
-            }
-            else if (TagType == 'C' || TagType == 'c')
-            {
-                switch (Pair_Choice % 12)
-                {
-                    case 0: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100388|4HG1 185710"));
-                        break;
-                    case 1: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100389|4HG1 185717"));
-                        break;
-                    case 2: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100390|4HG1 185721"));
-                        break;
-                    case 3: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100391|4HG1 185726"));
-                        break;
-                    case 4: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100392|4HG1 185728"));
-                        break;
-                    case 5: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100393|4HG1 185730"));
-                        break;
-                    case 6: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100394|4HG1 185741"));
-                        break;
-                    case 7: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100395|4HG1 185750"));
-                        break;
-                    case 8: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100396|4HG1 185752"));
-                        break;
-                    case 9: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100397|4HG1 185757"));
-                        break;
-                    case 10: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100398|4HG1 185759"));
-                        break;
-                    case 11: Response.AddRange(Encoding.ASCII.GetBytes("C|JAANPR71KD7100399|4HG1 185763"));
-                        break;
-                }
-            }
-            else if (TagType == 'E' || TagType == 'e')
-            {
-                switch (Pair_Choice % 12)
-                {
-                    case 0: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185710|JAANPR71KD7100388"));
-                        break;
-                    case 1: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185717|JAANPR71KD7100389"));
-                        break;
-                    case 2: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185721|JAANPR71KD7100390"));
-                        break;
-                    case 3: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185726|JAANPR71KD7100391"));
-                        break;
-                    case 4: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185728|JAANPR71KD7100392"));
-                        break;
-                    case 5: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185730|JAANPR71KD7100393"));
-                        break;
-                    case 6: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185741|JAANPR71KD7100394"));
-                        break;
-                    case 7: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185750|JAANPR71KD7100395"));
-                        break;
-                    case 8: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185752|JAANPR71KD7100396"));
-                        break;
-                    case 9: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185757|JAANPR71KD7100397"));
-                        break;
-                    case 10: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185759|JAANPR71KD7100398"));
-                        break;
-                    case 11: Response.AddRange(Encoding.ASCII.GetBytes("E|4HG1 185763|JAANPR71KD7100399"));
-                        break;
-                }
-            }
-
-            //Fill remaining space with null
-            int CMD_Length = Response.Count - 1; //Excluding BootCode
-
-            for(int i = CMD_Length; i<0x2A; i++)
-            {
-                Response.Add(0x00);
-            }
-
-            //End UMEM Data
-            Response.Add(CalculateChecksum(Response.ToArray(), 0, Response.Count));
-            return Response.ToArray();
-        }
-        #endregion
-
-
+        
         #region 1.Connection Section
         //This Section contain Connectivity Function
 
@@ -836,16 +670,15 @@ namespace SensMaster
         /// </summary>
         /// <param name="EPC_Bytes">The EPC Data Bytes.</param>
         /// <returns>True = Exist, False = New Record.</returns>
-        private bool Check_Tag_EPC_Checklist(byte[] EPC_Bytes)
+        private bool Check_Tag_EPC_Checklist(byte[] epc)
         {
-            string epc = BitConverter.ToString(EPC_Bytes);
             if (Tag_EPC_Checklist.Contains(epc))
             {
                 return true;
             }
             else
             {
-                Tag_EPC_Checklist.Add(epc,EPC_Bytes);
+                Tag_EPC_Checklist.Add(epc);
                 return false;
             }
         }
@@ -890,14 +723,15 @@ namespace SensMaster
                 try
                 {
                     in_operation = true;
-                    int OperationTimeOut = 500;
+                    int OperationTimeOut = 120; // *60 * 100;
+                    OperationTimeOut = 5000;
                     bool Done = false;
                     List<Tag> Tag_List = new List<Tag>();
                     byte[] EPC_Bytes;
                     byte[] UMEM_Bytes;
                     byte ERROR_Code;
                     OrderedDictionary Marriage_EPC_CheckList = new OrderedDictionary(3);
-                    OrderedDictionary Marriage_UMEM_CheckList = new OrderedDictionary(3);
+                    Dictionary<byte,byte[]> Marriage_UMEM_CheckList = new Dictionary<byte,byte[]>();
 
                     Current_Read_Memory_OP = Read_Memory_Operation.Get_EPC;
 
@@ -962,13 +796,7 @@ namespace SensMaster
                                     if (ERROR_Code == 0x02 || ERROR_Code == 0x07 || ERROR_Code == 0x08)
                                     {
                                         // Detect no Tag || Parameter wrong || Non-existing data area
-                                        object obj = Tag_EPC_Checklist[Tag_EPC_Checklist.Count - 1];
-                                        byte[] epc;
-                                        if (obj is Int32)
-                                            epc = BitConverter.GetBytes((Int32)Tag_EPC_Checklist[Tag_EPC_Checklist.Count - 1]);
-                                        else
-                                            epc = (byte[])obj;
-                                        byte[] command = Read_Block_UMEM(epc);
+                                        byte[] command = Read_Block_UMEM(Tag_EPC_Checklist.Last<byte[]>());
                                         //Thread.Sleep(400);
                                         Connection_SendCommand(command);
                                     }
@@ -1043,9 +871,9 @@ namespace SensMaster
                                 {
                                     if (!Check_Tag_UMEM_Checklist(UMEM_Bytes))
                                     {
-                                        if (!Marriage_UMEM_CheckList.Contains(UMEM_Bytes[8]))
+                                        if (!Marriage_UMEM_CheckList.ContainsKey(UMEM_Bytes[8]))
                                         {
-                                            Marriage_UMEM_CheckList.Add((char)UMEM_Bytes[8], UMEM_Bytes);
+                                            Marriage_UMEM_CheckList.Add(UMEM_Bytes[8], UMEM_Bytes);
                                         }
 
                                         Marriage_EPC_CheckList.RemoveAt(0);
@@ -1057,33 +885,16 @@ namespace SensMaster
 
                                         if (Marriage_UMEM_CheckList.Count == 3)
                                         {
-                                            //Extract TID, Body/Chassis/Engine No.
-                                            byte[] BodyTag_UMEM_Byte = (byte[])Marriage_UMEM_CheckList[(object)'B'];
-                                            byte[] ChassisTag_UMEM_Byte = (byte[])Marriage_UMEM_CheckList[(object)'C'];
-                                            byte[] EngineTag_UMEM_Byte = (byte[])Marriage_UMEM_CheckList[(object)'E'];
-                                            string BodyTag_UMEM_String = Encoding.ASCII.GetString(BodyTag_UMEM_Byte, 8, 32);
-                                            string ChassisTag_UMEM_String = Encoding.ASCII.GetString(ChassisTag_UMEM_Byte, 8, 32);
-                                            string EngineTag_UMEM_String = Encoding.ASCII.GetString(EngineTag_UMEM_Byte, 8, 32);
-                                            string[] BodyTag_UMEM_Split = BodyTag_UMEM_String.Split('|');
-                                            string[] ChassisTag_UMEM_Split = ChassisTag_UMEM_String.Split('|');
-                                            string[] EngineTag_UMEM_Split = EngineTag_UMEM_String.Split('|');
-                                            string BodyTag_TID = BitConverter.ToString(BodyTag_UMEM_Byte, 0, 8);
-                                            string ChassisTag_TID = BitConverter.ToString(ChassisTag_UMEM_Byte, 0, 8);
-                                            string EngineTag_TID = BitConverter.ToString(EngineTag_UMEM_Byte, 0, 8);
+                                            Body BodyTag = (Body)ParseUserMemory(Marriage_UMEM_CheckList[0x42]);
+                                            Chassis ChassisTag =  (Chassis)ParseUserMemory(Marriage_UMEM_CheckList[0x43]);
+                                            Engine EngineTag =  (Engine)ParseUserMemory(Marriage_UMEM_CheckList[0x45]);
+                                            Tag_List.AddRange(new Tag[] { BodyTag, ChassisTag, EngineTag });
+                                            Complete(Tag_List.GetRange(0,3).ToArray(), PostComplete);
+                                            Done = true;
 
-                                            if (ChassisTag_UMEM_Split[1].Replace("\0", "") == EngineTag_UMEM_Split[2].Replace("\0", "") &&
-                                                ChassisTag_UMEM_Split[2].Replace("\0", "") == EngineTag_UMEM_Split[1].Replace("\0", ""))
+                                            if (ChassisTag.EngineNo != EngineTag.EngineNo || ChassisTag.ChassisNo != EngineTag.ChassisNo)
                                             {
-                                                Body BodyTag = new Body(reader, BitConverter.ToString(BodyTag_UMEM_Byte), BodyTag_TID, BodyTag_UMEM_Split[1]);
-                                                Chassis ChassisTag = new Chassis(reader, BitConverter.ToString(ChassisTag_UMEM_Byte), ChassisTag_TID, EngineTag_UMEM_Split[1], EngineTag_UMEM_Split[2]);
-                                                Engine EngineTag = new Engine(reader, BitConverter.ToString(EngineTag_UMEM_Byte), EngineTag_TID, EngineTag_UMEM_Split[1], EngineTag_UMEM_Split[2]);
-                                                Tag_List.AddRange(new Tag[] { BodyTag, ChassisTag, EngineTag });
-                                                Complete(Tag_List.ToArray(), PostComplete);
-                                                Done = true;
-                                            }
-                                            else
-                                            {
-                                                throw new OperationException("Chassis & Engine Mismatch!");
+                                             //   throw new OperationException("Chassis & Engine Mismatch!");
                                             }
                                         }
                                     }
@@ -1106,6 +917,10 @@ namespace SensMaster
 
                             #endregion Marriage Tag operation
                         }
+                    }
+                    if (reader.Read_Type == ReaderType.MARRIAGETAG && !Done)
+                    {
+                        // didn't get the right tags, call sp_sm_marriage_error_Tag
                     }
                 }
                 catch (Exception ex)
